@@ -1,5 +1,8 @@
 # fdailyCostControl — Azure Cost Monitoring Function
 
+[![CI](https://github.com/jmanuelcorral/fdailycostcontrol/actions/workflows/ci.yml/badge.svg)](https://github.com/jmanuelcorral/fdailycostcontrol/actions/workflows/ci.yml)
+![Code Coverage](https://img.shields.io/badge/Code%20Coverage-check%20PR-blue)
+
 Azure Function (Python v2) that monitors daily Azure costs per Resource Group and sends alerts via webhook to Pandora FMS when configured thresholds are exceeded.
 
 ---
