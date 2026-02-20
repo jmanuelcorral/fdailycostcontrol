@@ -1,0 +1,24 @@
+# Exclude from Azure Functions deployment package
+.git*
+.vscode/
+tests/
+deployment/
+__pycache__/
+*.pyc
+.env*
+.funcignore
+README.md
+requirements-dev.txt
+pyproject.toml
+uv.lock
+.python_packages/
+env/
+venv/
+.venv/
+.uv/
+*.md
+
+# Azurite local artifacts
+__blobstorage__
+__queuestorage__
+__azurite_db*__.json

@@ -1,0 +1,28 @@
+[project]
+name = "fdailycostcontrol"
+version = "1.0.0"
+description = "Azure Function para monitorización de costes de grupos de recursos con alertas webhook a Pandora FMS"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "azure-functions",
+    "azure-identity",
+    "azure-mgmt-costmanagement",
+    "requests",
+    "azure-data-tables",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.uv]
+# Azure Functions still requires requirements.txt for remote build.
+# Regenerate with: uv export --no-hashes --no-dev -o requirements.txt
