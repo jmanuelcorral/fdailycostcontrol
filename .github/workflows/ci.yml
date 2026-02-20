@@ -1,10 +1,13 @@
-name: CI
+name: CI/CD
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.11'
 
 jobs:
   build-and-test:
@@ -60,3 +63,105 @@ jobs:
         with:
           recreate: true
           path: code-coverage-results.md
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ vars.RESOURCE_GROUP_NAME }} \
+            --location ${{ vars.LOCATION || 'westeurope' }} \
+            --output none 2>/dev/null || true
+
+      - name: Deploy infrastructure (Bicep)
+        id: bicep
+        uses: azure/arm-deploy@v2
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ vars.RESOURCE_GROUP_NAME }}
+          template: ./deployment/main.bicep
+          parameters: >
+            functionAppName=${{ vars.FUNCTION_APP_NAME }}
+            storageAccountName=${{ vars.STORAGE_ACCOUNT_NAME }}
+            location=${{ vars.LOCATION || 'westeurope' }}
+          failOnStdErr: false
+
+      - name: Assign Cost Management Reader role
+        run: |
+          PRINCIPAL_ID="${{ steps.bicep.outputs.functionAppPrincipalId }}"
+          MONITORED_SUB="${{ secrets.MONITORED_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}"
+          SCOPE="/subscriptions/${MONITORED_SUB}"
+
+          EXISTING=$(az role assignment list \
+            --assignee "$PRINCIPAL_ID" \
+            --role "Cost Management Reader" \
+            --scope "$SCOPE" \
+            --query "length(@)" \
+            --output tsv)
+
+          if [ "$EXISTING" -eq "0" ]; then
+            az role assignment create \
+              --assignee-object-id "$PRINCIPAL_ID" \
+              --assignee-principal-type ServicePrincipal \
+              --role "Cost Management Reader" \
+              --scope "$SCOPE" \
+              --output none
+            echo "Role assigned successfully"
+          else
+            echo "Role already assigned, skipping"
+          fi
+
+      - name: Configure App Settings
+        run: |
+          az functionapp config appsettings set \
+            --name ${{ vars.FUNCTION_APP_NAME }} \
+            --resource-group ${{ vars.RESOURCE_GROUP_NAME }} \
+            --settings \
+              "MONITORED_SUBSCRIPTION_ID=${{ secrets.MONITORED_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}" \
+              "ALERT_COOLDOWN_MINUTES=${{ vars.ALERT_COOLDOWN_MINUTES || '60' }}" \
+              "AzureWebJobsStorage__accountName=${{ vars.STORAGE_ACCOUNT_NAME }}" \
+            --output none
+
+          if [ -n "${{ secrets.COST_MONITOR_CONFIG }}" ]; then
+            az functionapp config appsettings set \
+              --name ${{ vars.FUNCTION_APP_NAME }} \
+              --resource-group ${{ vars.RESOURCE_GROUP_NAME }} \
+              --settings "COST_MONITOR_CONFIG=${{ secrets.COST_MONITOR_CONFIG }}" \
+              --output none
+          fi
+
+          if [ -n "${{ secrets.WEBHOOK_ENDPOINTS }}" ]; then
+            az functionapp config appsettings set \
+              --name ${{ vars.FUNCTION_APP_NAME }} \
+              --resource-group ${{ vars.RESOURCE_GROUP_NAME }} \
+              --settings "WEBHOOK_ENDPOINTS=${{ secrets.WEBHOOK_ENDPOINTS }}" \
+              --output none
+          fi
+
+      - name: Install dependencies for deployment
+        run: pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+
+      - name: Deploy Function App code
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.FUNCTION_APP_NAME }}
+          package: '.'
