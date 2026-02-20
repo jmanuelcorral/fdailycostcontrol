@@ -26,7 +26,7 @@ jobs:
         run: uv sync
 
       - name: Run tests
-        run: uv run pytest tests/ -v --cov=modules --cov=function_app --cov-report=term-missing
+        run: uv run pytest tests/ -v --cov=modules --cov=function_app --cov-report=term-missing --cov-report=xml:coverage.xml
 
       - name: Check code style (optional)
         run: |
@@ -35,7 +35,8 @@ jobs:
         continue-on-error: true
 
       - name: Upload coverage report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: .coverage
+          path: coverage.xml
